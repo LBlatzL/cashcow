@@ -29,6 +29,14 @@ class AtmRead(AtmBase):
     id: int
     model_config = ConfigDict(from_attributes=True)
 
+class AtmUpdate(BaseModel):
+    serial_number: int | None = None
+    model: str | None = None
+    status: Status | None = None
+    cash_level: int | None = None
+    branch_id: int | None = None
+    technician_id: int | None = None
+
 class MaintenanceFlagRead(BaseModel):
     branch_id: int
     branch_name: str
@@ -126,3 +134,32 @@ async def get_maintenance_flags(db: AsyncSession = Depends(get_db)):
 
     result = await db.execute(statement)
     return result.all()
+
+@router.patch("/{atm_id}", response_model=AtmRead)
+async def update_atm(
+    atm_id: int,
+    data: AtmUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.operations_admin))
+):
+    result = await db.execute(
+        select(Atm).where(Atm.id == atm_id)
+    )
+
+    atm = result.scalar_one_or_none()
+
+    if atm is None:
+        raise HTTPException(
+            status_code=404,
+            detail="ATM not found"
+        )
+
+    updates = data.model_dump(exclude_unset=True)
+
+    for field, value in updates.items():
+        setattr(atm, field, value)
+
+    await db.commit()
+    await db.refresh(atm)
+
+    return atm

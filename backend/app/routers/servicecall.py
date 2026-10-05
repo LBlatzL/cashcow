@@ -38,6 +38,13 @@ class ServiceCallRead(ServiceCallCreate):
 
     model_config = ConfigDict(from_attributes=True)
 
+class ServiceCallUpdate(BaseModel):
+    title: str | None = None
+    priority: Priority | None = None
+    status: ServiceStatus | None = None
+    atm_id: int | None = None
+    technician_id: int | None = None
+
 
 router = APIRouter(
     prefix="/service",
@@ -165,3 +172,39 @@ async def get_reliability(
     result = await db.execute(statement)
 
     return result.all()
+
+@router.patch(
+    "/{call_id}",
+    response_model=ServiceCallRead
+)
+async def update_service_call(
+    call_id: int,
+    data: ServiceCallUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(Role.operations_admin)
+    )
+):
+    result = await db.execute(
+        select(Service_call).where(
+            Service_call.id == call_id
+        )
+    )
+
+    service_call = result.scalar_one_or_none()
+
+    if service_call is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Service call not found"
+        )
+
+    updates = data.model_dump(exclude_unset=True)
+
+    for field, value in updates.items():
+        setattr(service_call, field, value)
+
+    await db.commit()
+    await db.refresh(service_call)
+
+    return service_call
